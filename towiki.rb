@@ -32,8 +32,12 @@ def process_normal (source_line)
         if math_index == 0
             source_line = process_math(source_line[math_index+1..-1])
         elsif source_line[math_index-1] == '['[0]
-            source_line = source_line[0..math_index-2] + 
-                    process_mathbox(source_line[math_index+1..-1])
+            if math_index == 1
+                source_line = process_mathbox(source_line[math_index+2..-1])
+            else
+                source_line = source_line[0..math_index-2] + 
+                        process_mathbox(source_line[math_index+2..-1])
+            end
         else
             source_line = source_line[0..math_index-1] +
                     process_math(source_line[math_index+1..-1])
@@ -47,13 +51,14 @@ def process_math (source_line)
     if $mode != :math
         prepend = '<math>'
     else
+        continuation = true
         prepend = ''
     end
     $mode = :math
 
     debug("     Math    : " + source_line)
 
-    if source_line[0] == '$'[0]
+    if (not continuation) and source_line[0] == '$'[0]
         source_line = prepend + process_mulmath(source_line[1..-1])
     elsif (math_index = source_line.index('$')) != nil
         source_line = prepend + source_line[0..math_index-1] + '</math>' + \
@@ -67,7 +72,7 @@ end
 
 def process_mathbox (source_line)
     if $mode != :mathbox
-        prepend = '<span style="border: 1px solid black; padding 3px"><math>'
+        prepend = '<math>{\color{BrickRed}'
     else
         prepend = ''
     end
@@ -77,7 +82,7 @@ def process_mathbox (source_line)
 
     if (math_index = source_line.index('$$]')) != nil
         source_line = prepend + source_line[0..math_index-1] + \
-            '</math></span>' + process_normal(source_line[math_index+3..-1])
+            '}</math>' + process_normal(source_line[math_index+3..-1])
     else
         source_line = prepend + source_line
     end
@@ -86,18 +91,19 @@ def process_mathbox (source_line)
 end
 
 def process_mulmath (source_line)
-    if $mode != mulmath
+    if $mode != :mulmath
         prepend = '\begin{align}'
     else
         prepend = ''
     end
     $mode = :mulmath
+    $newline = true
 
     debug("     Mulmath : " + source_line)
 
     if (math_index = source_line.index('$$')) != nil
         source_line = prepend + source_line[0..math_index-1] + \
-            '\end{align}</math>' + process_normal(source_line[math_index+2..-1])
+            "\\end{align}</math>\n" + process_normal(source_line[math_index+2..-1])
     else
         source_line = prepend + source_line
     end
@@ -156,14 +162,17 @@ source_file.each_line() { |source_line|
         # #:# number    3
         # # number      1
 
-        indent_chars= source_line.match('^[ \t]+')
+        indent_chars= source_line.match("^[ \t]+")
         if indent_chars
-            debug("indent_chars" + indent_chars.length.to_s + ":" + indent_chars[0] + ":")
             indent_chars= indent_chars[0]
-            indent_newd = indent_chars.count('\t') + indent_chars.count(' ')/4
+            indent_newd = indent_chars.count("\t") + indent_chars.count(' ')/4
+            debug("    indent: count: #{indent_newd}, stack:#{indent_stack}")
         else
             indent_newd = 0
             indent_chars = ''
+            if indent_stack
+                $newline = true
+            end
         end
         source_line.lstrip!
         indent_last = source_line[0]
@@ -210,8 +219,8 @@ source_file.each_line() { |source_line|
 
     elsif $mode == :math
         source_line = process_math(source_line)
-    elsif $mode == :emphmath
-        source_line = process_emphmath(source_line)
+    elsif $mode == :mathbox
+        source_line = process_mathbox(source_line)
     elsif $mode == :mulmath
         source_line = process_mulmath(source_line)
     end
@@ -220,6 +229,9 @@ source_file.each_line() { |source_line|
     if $mode == :normal and source_line[-2..-1] == '\\\\'
         source_line = source_line[0..-3]
         $newline = true
+        if not indent_enum
+            source_line += "\n"
+        end
         debug('\\\\Found newline sequence')
     end
 
